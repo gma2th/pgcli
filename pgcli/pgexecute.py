@@ -193,13 +193,14 @@ class PGExecute(object):
         WHERE name = 'unix_socket_directories'
     '''
 
-    def __init__(self, database, user, password, host, port, dsn, **kwargs):
+    def __init__(self, database, user, password, host, port, dsn, autocommit_mode, **kwargs):
         self.dbname = database
         self.user = user
         self.password = password
         self.host = host
         self.port = port
         self.dsn = dsn
+        self.autocommit_mode = autocommit_mode
         self.extra_args = {k: unicode2utf8(v) for k, v in kwargs.items()}
         self.connect()
 
@@ -266,7 +267,7 @@ class PGExecute(object):
         register_json_typecasters(self.conn, self._json_typecaster)
         register_hstore_typecaster(self.conn)
 
-        self.conn.autocommit = False
+        self.conn.autocommit = self.autocommit_mode
         self.user_transaction_ongoing = False
 
     def _select_one(self, cur, sql):
@@ -389,30 +390,32 @@ class PGExecute(object):
         cur = self.conn.cursor()
         split_sql = ' '.join(e for e in split_sql.upper().split(' ') if e)
 
-        # If user last command is commit, he have no transaction ongoing.
-        if split_sql == 'COMMIT':
-            self.user_transaction_ongoing = False
-        elif split_sql.startswith(COMMANDS_NOT_TO_RUN_IN_TRANSACTION):
-            # Some queries cannot be run in transaction.
-            # Autocommit cannot be change during transaction
-            # If user transaction is ongoing, we let postgres raise an error.
-            if self.user_transaction_ongoing is False:
-                self.conn.commit()
-                self.conn.set_session(autocommit=True)
+        if self.autocommit_mode is True:
             cur.execute(split_sql)
-            if self.user_transaction_ongoing is False:
-                self.conn.set_session(autocommit=False)
         else:
-            cur.execute('SAVEPOINT my_savepoint')
-            try:
+            # If user last command is commit, he has no transaction ongoing.
+            if split_sql == 'COMMIT':
+                self.user_transaction_ongoing = False
+            elif split_sql.startswith(COMMANDS_NOT_TO_RUN_IN_TRANSACTION):
+                # Some queries cannot be run in transaction.
+                # Autocommit cannot be change during transaction
+                # If user transaction is ongoing, we let postgres raise an error.
+                if self.user_transaction_ongoing is False:
+                    self.conn.commit()
+                    self.conn.set_session(autocommit=True)
                 cur.execute(split_sql)
-            except psycopg2.DatabaseError as exc:
-                cur.execute('ROLLBACK TO my_savepoint')
-                raise exc
+                self.conn.set_session(autocommit=False)
             else:
-                if not split_sql.startswith(COMMANDS_NOT_TO_SURROUND_BY_SAVEPOINT):
-                    cur.execute('RELEASE my_savepoint')
-                self.user_transaction_ongoing = True
+                cur.execute('SAVEPOINT my_savepoint')
+                try:
+                    cur.execute(split_sql)
+                except psycopg2.DatabaseError as exc:
+                    cur.execute('ROLLBACK TO my_savepoint')
+                    raise exc
+                else:
+                    if not split_sql.startswith(COMMANDS_NOT_TO_SURROUND_BY_SAVEPOINT):
+                        cur.execute('RELEASE my_savepoint')
+                    self.user_transaction_ongoing = True
 
         # conn.notices persist between queies, we use pop to clear out the list
         title = ''

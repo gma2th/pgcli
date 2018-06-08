@@ -148,6 +148,7 @@ class PGCli(object):
 
         self.multi_line = c['main'].as_bool('multi_line')
         self.multiline_mode = c['main'].get('multi_line_mode', 'psql')
+        self.autocommit_mode = c['main'].as_bool('autocommit_mode')
         self.vi_mode = c['main'].as_bool('vi')
         self.auto_expand = auto_vertical_output or c['main'].as_bool(
             'auto_expand')
@@ -433,7 +434,7 @@ class PGCli(object):
         # a password (no -w flag), prompt for a passwd and try again.
         try:
             try:
-                pgexecute = PGExecute(database, user, passwd, host, port, dsn,
+                pgexecute = PGExecute(database, user, passwd, host, port, dsn, self.autocommit_mode,
                                       application_name='pgcli', **kwargs)
                 if passwd:
                     try:
@@ -447,7 +448,7 @@ class PGCli(object):
                                           hide_input=True, show_default=False,
                                           type=str)
                     pgexecute = PGExecute(database, user, passwd, host, port,
-                                          dsn, application_name='pgcli',
+                                          dsn, self.autocommit_mode, application_name='pgcli',
                                           **kwargs)
                     if passwd:
                         keyring.set_password('pgcli', key, passwd)

@@ -25,7 +25,9 @@ multi_line_mode = psql
 # Destructive warning mode will alert you before executing a sql statement
 # that may cause harm to the database such as "drop table", "drop database"
 # or "shutdown".
-destructive_warning = True
+destructive_warning = False
+
+autocommit_mode = False
 
 # Enables expand mode, which is similar to `\x` in psql.
 expand = False
@@ -164,7 +166,7 @@ Token.Toolbar.Transaction.Valid = 'bg:#222222 #00ff5f bold'
 Token.Toolbar.Transaction.Failed = 'bg:#222222 #ff005f bold'
 
 # color of table
-# you can use token or custom colors 
+# you can use token or custom colors
 Token.Output.Header = "#00ff5f bold"
 Token.Output.OddRow = ""
 Token.Output.EvenRow = ""

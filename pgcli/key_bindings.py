@@ -51,6 +51,15 @@ def pgcli_bindings(get_vi_mode_enabled, set_vi_mode_enabled):
 
         event.cli.editing_mode = EditingMode.VI if vi_mode else EditingMode.EMACS
 
+    @key_binding_manager.registry.add_binding(Keys.F5)
+    def _(event):
+        """
+        Enable/Disable Multiline Mode.
+        """
+        _logger.debug('Detected F5 key.')
+        buf = event.cli.current_buffer
+        buf.autocommit_mode = not buf.autocommit_mode
+
     @key_binding_manager.registry.add_binding(Keys.Tab)
     def _(event):
         """
