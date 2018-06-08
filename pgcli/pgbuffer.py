@@ -4,9 +4,10 @@ from .packages.parseutils.utils import is_open_quote
 
 
 class PGBuffer(Buffer):
-    def __init__(self, always_multiline, multiline_mode, *args, **kwargs):
+    def __init__(self, always_multiline, multiline_mode, autocommit_mode, *args, **kwargs):
         self.always_multiline = always_multiline
         self.multiline_mode = multiline_mode
+        self.autocommit_mode = autocommit_mode
 
         @Condition
         def is_multiline():

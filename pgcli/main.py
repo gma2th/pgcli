@@ -680,6 +680,7 @@ class PGCli(object):
                 auto_suggest=AutoSuggestFromHistory(),
                 always_multiline=self.multi_line,
                 multiline_mode=self.multiline_mode,
+                autocommit_mode=self.autocommit_mode,
                 completer=self.completer,
                 history=history,
                 complete_while_typing=Always(),
