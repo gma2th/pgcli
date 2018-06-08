@@ -29,6 +29,30 @@ ext.register_type(ext.new_type((17,), 'BYTEA_TEXT', psycopg2.STRING))
 # TODO: Get default timeout from pgclirc?
 _WAIT_SELECT_TIMEOUT = 1
 
+# Tuple because used in starstwith
+COMMANDS_NOT_TO_SURROUND_BY_SAVEPOINT = (
+    'SAVEPOINT',
+    'ROLLBACK',
+    'RELEASE',
+    'COMMIT',
+)
+
+COMMANDS_NOT_TO_RUN_IN_TRANSACTION = (
+    'ALTER DATABASE',
+    'COMMIT PREPARED',
+    'CREATE DATABASE',
+    'CREATE TABLESPACE',
+    'DISCARD ALL',
+    'DROP DATABASE',
+    'DROP SUBSCRIPTION',
+    'DROP TABLESPACE',
+    'REINDEX DATABASE',
+    'REINDEX SCHEMA',
+    'ROLLBACK PREPARED',
+    'VACUUM',
+)
+
+COMMIT_COMMAND = 'COMMIT'
 
 def _wait_select(conn):
     """
@@ -113,7 +137,14 @@ def register_hstore_typecaster(conn):
     """
     with conn.cursor() as cur:
         try:
-            cur.execute("SELECT 'hstore'::regtype::oid")
+            # FIXME: type "hstore" does not exist
+            try:
+                cur.execute('SAVEPOINT my_savepoint')
+                cur.execute("SELECT 'hstore'::regtype::oid")
+            except psycopg2.DatabaseError as exc:
+                cur.execute('ROLLBACK TO my_savepoint')
+            else:
+                cur.execute('RELEASE my_savepoint')
             oid = cur.fetchone()[0]
             ext.register_type(ext.new_type((oid,), "HSTORE", ext.UNICODE))
         except Exception:
@@ -235,6 +266,9 @@ class PGExecute(object):
         register_json_typecasters(self.conn, self._json_typecaster)
         register_hstore_typecaster(self.conn)
 
+        self.conn.autocommit = False
+        self.user_transaction_ongoing = False
+
     def _select_one(self, cur, sql):
         """
         Helper method to run a select and retrieve a single field value
@@ -353,7 +387,32 @@ class PGExecute(object):
         """Returns tuple (title, rows, headers, status)"""
         _logger.debug('Regular sql statement. sql: %r', split_sql)
         cur = self.conn.cursor()
-        cur.execute(split_sql)
+        split_sql = ' '.join(e for e in split_sql.upper().split(' ') if e)
+
+        # If user last command is commit, he have no transaction ongoing.
+        if split_sql == 'COMMIT':
+            self.user_transaction_ongoing = False
+        elif split_sql.startswith(COMMANDS_NOT_TO_RUN_IN_TRANSACTION):
+            # Some queries cannot be run in transaction.
+            # Autocommit cannot be change during transaction
+            # If user transaction is ongoing, we let postgres raise an error.
+            if self.user_transaction_ongoing is False:
+                self.conn.commit()
+                self.conn.set_session(autocommit=True)
+            cur.execute(split_sql)
+            if self.user_transaction_ongoing is False:
+                self.conn.set_session(autocommit=False)
+        else:
+            cur.execute('SAVEPOINT my_savepoint')
+            try:
+                cur.execute(split_sql)
+            except psycopg2.DatabaseError as exc:
+                cur.execute('ROLLBACK TO my_savepoint')
+                raise exc
+            else:
+                if not split_sql.startswith(COMMANDS_NOT_TO_SURROUND_BY_SAVEPOINT):
+                    cur.execute('RELEASE my_savepoint')
+                self.user_transaction_ongoing = True
 
         # conn.notices persist between queies, we use pop to clear out the list
         title = ''
